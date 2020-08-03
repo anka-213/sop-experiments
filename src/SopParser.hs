@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -20,9 +21,8 @@ import Generics.SOP.NP (sequence_NP, cpure_NP)
 data FooBar = Foo | Bar
   deriving stock (Eq, Show)
   deriving stock (GHC.Generic)
+  deriving anyclass (Generic, HasDatatypeInfo)
 
-instance Generic FooBar
-instance HasDatatypeInfo FooBar
 
 --- $> :browse Text.ParserCombinators.ReadP
 

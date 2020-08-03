@@ -87,3 +87,5 @@ ex1 (I n :* I () :* Nil) = "Ex1, Int: " ++ show n
 
 ex2 :: NP I '[Char] -> String
 ex2 (I c :* Nil) = "Ex2. Char: " ++ show c
+
+-- $> to . from $ False :: FooBar

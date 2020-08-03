@@ -21,7 +21,7 @@ source-repository head
 
 common common-options
   build-depends:       base ^>= 4.13.0.0
-  build-depends:       generics-sop, QuickCheck
+  build-depends:       generics-sop, QuickCheck, hxt
   
   extensions:          TypeApplications
   ghc-options:         -Wall
@@ -44,7 +44,7 @@ common common-options
 library
   import:              common-options
   hs-source-dirs:      src
-  exposed-modules:     SopExperiments, SopParser
+  exposed-modules:     SopExperiments, SopParser, PickleSOP, InvertibleSOP
 
 test-suite sop-experiments-test
   import:              common-options
