@@ -21,7 +21,14 @@ source-repository head
 
 common common-options
   build-depends:       base ^>= 4.13.0.0
-  build-depends:       generics-sop, QuickCheck, hxt
+  build-depends:       generics-sop
+                     , QuickCheck
+                     , hxt
+                     -- Used by Text.XML.HXT.Arrow.Pickle.Xml.Invertible
+                    --  , invertible-sop
+                     , invertible
+                     , mtl
+                     , hxt-charproperties
   
   extensions:          TypeApplications
   ghc-options:         -Wall
@@ -44,7 +51,11 @@ common common-options
 library
   import:              common-options
   hs-source-dirs:      src
-  exposed-modules:     SopExperiments, SopParser, PickleSOP, InvertibleSOP
+  exposed-modules:     SopExperiments
+                     , SopParser
+                     , PickleSOP
+                     , InvertibleSOP
+                    --  , Text.XML.HXT.Arrow.Pickle.Xml.Invertible
 
 test-suite sop-experiments-test
   import:              common-options

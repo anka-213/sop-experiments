@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PolyKinds #-}
@@ -17,17 +18,24 @@ import Text.XML.HXT.Arrow.Pickle.Xml (xpElemQN, mchoice, throwMsg)
 import Text.XML.HXT.Arrow.Pickle.Schema (scSeq, scAlt, scNull)
 import Data.Coerce (Coercible, coerce)
 import Control.Applicative (Applicative(liftA2))
+import Data.Maybe (fromMaybe, fromJust)
 
 type SOP' f a = NS (NP f) a
 
-xpSOP' :: Generic a => PU a -> PU (SOP' I (Code a))
-xpSOP' = xpWrap (unSOP . from , to . SOP)
+xpSOPInv' :: Generic a => PU a -> PU (SOP' I (Code a))
+xpSOPInv' = xpWrap (unSOP . from , to . SOP)
 
-xpSOP :: Generic a => PU a -> PU (SOP I (Code a))
-xpSOP = xpWrap (from , to)
+xpSOPInv :: Generic a => PU a -> PU (SOP I (Code a))
+xpSOPInv = xpWrap (from , to)
 
-xpSOP'' :: Generic a => PU a -> PU (SOP' I (Code a))
-xpSOP'' = coerce . xpSOP
+xpSOPInv'' :: Generic a => PU a -> PU (SOP' I (Code a))
+xpSOPInv'' = coerce . xpSOPInv
+
+xpSOP:: Generic a => PU (SOP I (Code a)) -> PU a
+xpSOP= xpWrap (to , from)
+
+xpSOP' :: Generic a => PU (SOP' I (Code a)) -> PU a
+xpSOP' = xpSOP . coerce
 
 -- xpNewtype :: Coercible a x => PU x -> PU a
 xpNewtype :: IsNewtype a x => PU x -> PU a
@@ -55,23 +63,34 @@ pickleSum (Comp x :* xs) = xpOr x $ pickleSum xs
 
 pickleSum' :: NP (PU :.: f) a -> PU (NS f a)
 pickleSum' = unComp . hfoldr' (liftComp2 xpOr) (Comp xpNull)
-  where
     -- liftComp f = unComp . f . Comp 
     -- liftComp2 :: (:.:) PU f (g x) -> (:.:) PU f (g x) -> (:.:) PU f (g x)
  -- f (g p) -> f (g p) -> f (g p)
     -- liftComp2 f x y = Comp $ f (unComp x) (unComp y)
-    liftComp2 f x y = Comp $ f (unComp x) (unComp y)
+
+liftComp2 :: ((f (g p)    -> f (g1 p1)     -> f (g2 p2))
+           -> (:.:) f g p -> (:.:) f g1 p1 -> (:.:) f g2 p2)
+liftComp2 f x y = Comp $ f (unComp x) (unComp y)
 
 pickleSum'' :: forall f a. NP (PU :.: f) a -> PU (NS f a)
 pickleSum'' = hfoldr (xpOr . unComp) xpNull
 -- pickleSum'' = (coerce $ hfoldr' @f @(PU :.: NS f) @a) xpOr xpNull
 
-pickleSum''' :: SListI xs => NP (PU :.: f) xs -> PU (NS f xs)
-pickleSum''' picklers = xpAlt hindex $ fmap sequencePU z
-  where z = apInjs_NP picklers
+-- -- Less safe and doesn't work
+-- pickleSum''' :: SListI xs => NP (PU :.: f) xs -> PU (NS f xs)
+-- pickleSum''' picklers = xpAlt hindex $ fmap sequencePU $ apInjs_NP picklers
 
-sequencePU :: NS (PU :.: f) xs -> PU (NS f xs)
-sequencePU = error "not implemented"
+-- sequencePU :: SListI xs => NS (PU :.: f) xs -> PU (NS f xs)
+-- sequencePU = hcollapse . hmap (K . xpWrap (_ , _) . unComp)
+
+-- | Bad version. Don't use
+pickleSum'''' :: SListI xs => NP (PU :.: f) xs -> PU (NS f xs)
+pickleSum'''' picklers = xpAlt hindex . hcollapse $ hliftA3 ejectInject ejections injections picklers
+
+-- | Combine an ejection and an injection to convert a PU (f a) to a PU (NS f xs)
+-- Warning: The function is partial
+ejectInject :: Ejection f xs a -> Injection f xs a -> (PU :.: f) a -> K (PU (NS f xs)) a
+ejectInject (Fn ej) (Fn inj) (Comp pu) = K $ xpWrap (unK . inj , fromJust . unComp . ej . K) pu
 
 -- pickleSum' :: SListI a => NP (PU :.: f) a -> PU (NS f a)
 -- pickleSum' = undefined . hmap (_ . fn . xpOr . unComp)
@@ -132,10 +151,47 @@ autoPickle' names = coerce pickleFull
     mkElem = coerce $ xpElemQN @(NP I a1)
     -- mkElem (K name) (Comp pickl) = Comp $ xpElemQN name pickl
 
--- autoPickle'' :: All2 XmlPickler a => NP (K QName) a -> PU (SOP' I a)
--- autoPickle'' = hcfoldr Proxy (\x -> xpOr $ xpElemQN (unK x) autoProduct) xpNull
+autoPickle'' :: All2 XmlPickler a => NP (K QName) a -> PU (SOP' I a)
+autoPickle'' = pickleSum . hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
+-- autoPickle'' = hfoldr (xpOr . unComp) xpNull . hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
+-- autoPickle'' = hfoldr (\x -> xpOr $ unComp x) xpNull . hcmap proxyXP1 (\(x :: K QName a1) -> Comp $ xpElemQN (unK x) $ autoProduct @a1)
+-- autoPickle'' = hfoldr (\x -> xpOr $ unK x) xpNull . hmap (\x -> K $ xpElemQN (unK x) autoProduct)
+-- autoPickle'' = hfoldr (\x -> xpOr $ xpElemQN (unK x) autoProduct) xpNull
 -- autoPickle'' Nil = xpNull
 -- autoPickle'' (K x :* xs) = xpOr (xpElemQN x autoProduct) $ autoPickle'' xs
+
+-- | Create a product of picklers for all the cases in a sum type, 
+-- given the element names for each constructor
+productOfPicklers :: All2 XmlPickler a => NP (K QName) a -> NP (PU :.: NP I) a
+productOfPicklers = hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
+-- | Turns a product of unqualified names into a product of qualified names.
+
+type NamespaceUri = String
+type NSPrefix = String
+type LocalName = String
+
+qualify :: SListI xs => NamespaceUri -> NSPrefix -> NP (K LocalName) xs -> NP (K QName) xs
+qualify namespace prefix = hmap $ mapKK $ \name -> mkQName prefix name namespace
+
+
+type XmlSOP a = (Generic a, All2 XmlPickler (Code a))
+
+-- | Given a namespace, a prefix and a list of element names,
+-- return a pickler for a sum type, assuming all contained data 
+autoPickleSOP :: XmlSOP a => NamespaceUri -> NSPrefix -> NP (K LocalName) (Code a) -> PU a
+autoPickleSOP namespace prefix elemNames =
+  xpSOP'
+    . pickleSum''
+    . productOfPicklers
+    $ qualify namespace prefix elemNames
+
+-- | Partial version of the function above, which instead takes an ordinary list
+autoPickleSOPList :: XmlSOP a => NamespaceUri -> NSPrefix -> [LocalName] -> PU a
+autoPickleSOPList namespace prefix elemNames =
+  autoPickleSOP namespace prefix
+    . fromMaybe (error $ "autoPickleSOPList: Wrong length of list: " ++ show elemNames)
+    $ fromList elemNames
+
 
 -- | Pickle a simple product type
 -- You'll need to manually call xpElem to specify the element name
@@ -146,7 +202,7 @@ autoPickle' names = coerce pickleFull
 pickleProduct :: (IsProductType a xs, All XmlPickler xs) => PU a 
 pickleProduct = xpWrap (productTypeTo , productTypeFrom) autoProduct
 
-newtype SimpleProduct a = SimpleProduct a
+-- newtype SimpleProduct a = SimpleProduct a
 
 proxyTop :: Proxy Top
 proxyTop = Proxy
@@ -178,7 +234,7 @@ xpNull = PU
 xpOr :: PU (f x) -> PU (NS f xs) -> PU (NS f (x ': xs))
 xpOr p q = PU
     { appPickle = \case
-        Z a  -> appPickle p (a)
+        Z a  -> appPickle p a
         S as -> appPickle q as
     , appUnPickle = mchoice (Z <$> appUnPickle p) pure (S <$> appUnPickle q)
     , theSchema = theSchema p `scAlt` theSchema q
