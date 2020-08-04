@@ -22,6 +22,9 @@ import Data.Maybe (fromMaybe, fromJust)
 -- | An unwrapped sum of products
 type SOP' f a = NS (NP f) a
 
+-- | An unwrapped product of products
+type POP' f a = NP (NP f) a
+
 xpSOPInv' :: Generic a => PU a -> PU (SOP' I (Code a))
 xpSOPInv' = xpWrap (unSOP . from , to . SOP)
 
@@ -44,7 +47,7 @@ xpNewtype = coerce
 liftCoercion :: Coercible (f a) (f b) => (a -> b) -> f a -> f b
 liftCoercion _ = coerce
 
-pickleDeep :: NP (NP PU) a -> PU (SOP' I a)
+pickleDeep :: POP' PU a -> PU (SOP' I a)
 pickleDeep Nil = xpNull
 pickleDeep (x :* xs) = xpOr (pickleMany x) $ pickleDeep xs
 
@@ -119,7 +122,7 @@ hfoldr' f z = go where
     go Nil = z
     go (x :* xs) = f x $ go xs
 
-pickleDeep2 :: SListI a => NP (NP PU) a -> PU (SOP' I a)
+pickleDeep2 :: SListI a => POP' PU a -> PU (SOP' I a)
 pickleDeep2 = pickleSum . hmap (Comp . pickleMany)
 
 autoProduct :: All XmlPickler a => PU (NP I a)
