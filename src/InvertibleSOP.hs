@@ -1,15 +1,3 @@
-module InvertibleSOP (
-  zero,
-  unit,
-  (>*<),
-  (>|<),
-) where
-
-import Data.Void (Void, absurd)
-import Text.XML.HXT.Core
-import Text.XML.HXT.Arrow.Pickle.Xml (mchoice, throwMsg)
-import Text.XML.HXT.Arrow.Pickle.Schema (scSeq, scAlt, scNull)
-
 -- | Copied from https://hackage.haskell.org/package/invertible-hxt
 
 {-
@@ -44,6 +32,18 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 -}
+
+module InvertibleSOP (
+  zero,
+  unit,
+  (>*<),
+  (>|<),
+) where
+
+import Data.Void (Void, absurd)
+import Text.XML.HXT.Core
+import Text.XML.HXT.Arrow.Pickle.Xml (mchoice, throwMsg)
+import Text.XML.HXT.Arrow.Pickle.Schema (scSeq, scAlt, scNull)
 
 unit :: PU ()
 unit = xpUnit

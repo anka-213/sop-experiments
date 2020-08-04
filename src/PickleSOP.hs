@@ -5,10 +5,9 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
-module PickleSOP ( 
+module PickleSOP (
     module PickleSOP
 ) where
 
@@ -20,6 +19,7 @@ import Data.Coerce (Coercible, coerce)
 import Control.Applicative (Applicative(liftA2))
 import Data.Maybe (fromMaybe, fromJust)
 
+-- | An unwrapped sum of products
 type SOP' f a = NS (NP f) a
 
 xpSOPInv' :: Generic a => PU a -> PU (SOP' I (Code a))
@@ -44,7 +44,7 @@ xpNewtype = coerce
 liftCoercion :: Coercible (f a) (f b) => (a -> b) -> f a -> f b
 liftCoercion _ = coerce
 
-pickleDeep :: NP (NP PU) a -> PU (NS (NP I) a)
+pickleDeep :: NP (NP PU) a -> PU (SOP' I a)
 pickleDeep Nil = xpNull
 pickleDeep (x :* xs) = xpOr (pickleMany x) $ pickleDeep xs
 
@@ -119,11 +119,11 @@ hfoldr' f z = go where
     go Nil = z
     go (x :* xs) = f x $ go xs
 
-pickleDeep2 :: SListI a => NP (NP PU) a -> PU (NS (NP I) a)
+pickleDeep2 :: SListI a => NP (NP PU) a -> PU (SOP' I a)
 pickleDeep2 = pickleSum . hmap (Comp . pickleMany)
 
 autoProduct :: All XmlPickler a => PU (NP I a)
-autoProduct = unComp $ cpara_SList proxyXP (Comp xpOne) (Comp . xpCons (xpNewtype xpickle) . unComp)
+autoProduct = unComp $ cpara_SList proxyXP (Comp xpOne) (Comp . xpCons (xpNewtype xpickle) . unComp)
 
 -- |
 autoPickle :: All2 XmlPickler a => NP (K QName) a -> PU (SOP' I a)
@@ -144,7 +144,7 @@ autoPickle' names = coerce pickleFull
     pickleContents = hmap (Comp . pickleMany) $ unPOP allPicklers
     pickleElem :: NP (PU :.: NP I) a
     pickleElem = hliftA2 mkElem names pickleContents
-    pickleFull :: PU (NS (NP I) a) 
+    pickleFull :: PU (SOP' I a)
     pickleFull = pickleSum pickleElem
 
     mkElem :: forall a1. K QName a1 -> (:.:) PU (NP I) a1 -> (:.:) PU (NP I) a1
@@ -152,7 +152,7 @@ autoPickle' names = coerce pickleFull
     -- mkElem (K name) (Comp pickl) = Comp $ xpElemQN name pickl
 
 autoPickle'' :: All2 XmlPickler a => NP (K QName) a -> PU (SOP' I a)
-autoPickle'' = pickleSum . hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
+autoPickle'' = pickleSum . hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
 -- autoPickle'' = hfoldr (xpOr . unComp) xpNull . hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
 -- autoPickle'' = hfoldr (\x -> xpOr $ unComp x) xpNull . hcmap proxyXP1 (\(x :: K QName a1) -> Comp $ xpElemQN (unK x) $ autoProduct @a1)
 -- autoPickle'' = hfoldr (\x -> xpOr $ unK x) xpNull . hmap (\x -> K $ xpElemQN (unK x) autoProduct)
@@ -163,7 +163,7 @@ autoPickle'' = pickleSum . hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoPr
 -- | Create a product of picklers for all the cases in a sum type, 
 -- given the element names for each constructor
 productOfPicklers :: All2 XmlPickler a => NP (K QName) a -> NP (PU :.: NP I) a
-productOfPicklers = hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
+productOfPicklers = hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
 -- | Turns a product of unqualified names into a product of qualified names.
 
 type NamespaceUri = String
@@ -171,7 +171,7 @@ type NSPrefix = String
 type LocalName = String
 
 qualify :: SListI xs => NamespaceUri -> NSPrefix -> NP (K LocalName) xs -> NP (K QName) xs
-qualify namespace prefix = hmap $ mapKK $ \name -> mkQName prefix name namespace
+qualify namespace prefix = hmap $ mapKK $ \name -> mkQName prefix name namespace
 
 
 type XmlSOP a = (Generic a, All2 XmlPickler (Code a))
@@ -199,9 +199,22 @@ autoPickleSOPList namespace prefix elemNames =
 -- data Foo = Foo Some Things
 -- instance XmlPickler Foo where
 --   xpickle = xpElem "foo" pickleProduct
-pickleProduct :: (IsProductType a xs, All XmlPickler xs) => PU a 
+pickleProduct :: (IsProductType a xs, All XmlPickler xs) => PU a
 pickleProduct = xpWrap (productTypeTo , productTypeFrom) autoProduct
 
+pickleProduct' :: (IsProductType a xs, All XmlPickler xs) => PU a
+pickleProduct' = xpSOP' . xpWrap (Z , unZ) $ autoProduct
+
+-- | Constructor for lists of `K a`
+-- 
+-- >>> "a" <: "b" <: Nil :: NP (K String) '[x, y]
+-- K "a" :* K "b" :* Nil
+(<:) :: a -> NP (K a) xs -> NP (K a) (x : xs)
+x <: xs = K x :* xs
+
+infixr 5 <:
+
+-- Wrapper for use with deriving via
 -- newtype SimpleProduct a = SimpleProduct a
 
 proxyTop :: Proxy Top
@@ -236,6 +249,6 @@ xpOr p q = PU
     { appPickle = \case
         Z a  -> appPickle p a
         S as -> appPickle q as
-    , appUnPickle = mchoice (Z <$> appUnPickle p) pure (S <$> appUnPickle q)
+    , appUnPickle = mchoice (Z <$> appUnPickle p) pure (S <$> appUnPickle q)
     , theSchema = theSchema p `scAlt` theSchema q
     }

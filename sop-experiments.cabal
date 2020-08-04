@@ -31,6 +31,8 @@ common common-options
                      , hxt-charproperties
   
   extensions:          TypeApplications
+                     , EmptyCase
+                     , DataKinds
   ghc-options:         -Wall
                        -Wcompat
                        -Widentities
