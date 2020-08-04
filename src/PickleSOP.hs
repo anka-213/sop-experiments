@@ -60,6 +60,7 @@ pickleMany' :: NP PU x -> PU (NP I x)
 pickleMany' = hfoldr (xpCons . xpNewtype) xpOne
 
 -- | Convert a product of picklers to a pickler of a sum
+-- This is equivalent to hsequence', except that PU is not applicative
 pickleSum :: NP (PU :.: f) a -> PU (NS f a)
 pickleSum Nil = xpNull
 pickleSum (Comp x :* xs) = xpOr x $ pickleSum xs
@@ -104,17 +105,28 @@ ejectInject (Fn ej) (Fn inj) (Comp pu) = K $ xpWrap (unK . inj , fromJust . unCo
 
 infixr 6 ~>
 
-hfoldr :: forall f r g xss. (forall x xs. f x -> r (g xs) -> r (g (x : xs))) -> r (g '[]) -> NP f xss -> r (g xss)
-hfoldr f = Comp ~> id ~> unComp $ hfoldr' $ id ~> unComp ~> Comp $ f
--- hfoldr = (id ~> unComp ~> Comp ) ~> Comp ~> id ~> unComp $ hfoldr' @f @(r :.: g)
--- hfoldr f z = unComp . hfoldr' (\x -> Comp . f x . unComp) (Comp z)
+hfoldr ::
+  forall f r g xss.
+  (forall x xs. f x -> r (g xs) -> r (g (x : xs))) ->
+  r (g '[]) ->
+  NP f xss ->
+  r (g xss)
+-- hfoldr f = Comp ~> id ~> unComp $ hfoldr' $ id ~> unComp ~> Comp $ f
+hfoldr f z = unComp . hfoldr' (\x -> Comp . f x . unComp) (Comp z)
 -- hfoldr f z = go where
 --     go :: forall z. NP f z -> r (g z)
 --     go Nil = z
 --     go (x :* xs) = f x $ go xs
+-- Failing attemts:
+-- hfoldr = (id ~> unComp ~> Comp ) ~> Comp ~> id ~> unComp $ hfoldr' @f @(r :.: g)
 -- hfoldr = coerce $ hfoldr' @(r :.: g f) @r @xss
-
-
+-- hfoldr = coerce $ hfoldr''
+--   where
+--    hfoldr'' :: (forall (x :: k) (xs :: [k]).
+--      f x -> (:.:) r g xs -> (:.:) r g (x : xs))
+--     -> (:.:) r g '[] -> NP f xss -> (:.:) r g xss
+--    hfoldr'' = hfoldr'
+ 
 
 hfoldr' :: forall f r xss. (forall x xs. f x -> r xs -> r (x : xs)) -> r '[] -> NP f xss -> r xss
 hfoldr' f z = go where

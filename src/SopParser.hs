@@ -8,6 +8,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE TypeApplications #-}
 module SopParser (module SopParser) where
 
 import qualified GHC.Generics as GHC
@@ -63,12 +64,8 @@ parse p = fmap enumTypeTo . mkParse2 . mkParse $ getConstructors p
 parseOne :: Read a => ReadP a
 parseOne = readS_to_P reads
 
--- Hack to circumvent https://github.com/facebookincubator/retrie/issues/16
-proxy :: Proxy t
-proxy = Proxy
-
 mkParseG1 :: All2 Read c => NP ConstructorInfo c -> NP (ReadP :.: NP I) c
-mkParseG1 = hcmap (proxy @(All Read)) $ Comp . mkParseG1Inner
+mkParseG1 = hcmap (Proxy @(All Read)) $ Comp . mkParseG1Inner
 
 mkParseG1Inner :: All Read c => ConstructorInfo c -> ReadP (NP I c)
 mkParseG1Inner info =
