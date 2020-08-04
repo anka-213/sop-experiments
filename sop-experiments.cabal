@@ -56,7 +56,7 @@ library
   exposed-modules:     SopExperiments
                      , SopParser
                      , PickleSOP
-                     , InvertibleSOP
+                     , HxtPickleInvertible
                     --  , Text.XML.HXT.Arrow.Pickle.Xml.Invertible
 
 test-suite sop-experiments-test
