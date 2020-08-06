@@ -13,11 +13,13 @@ module PickleSOP (
 
 import Text.XML.HXT.Core
 import Generics.SOP
-import Text.XML.HXT.Arrow.Pickle.Xml (xpElemQN, mchoice, throwMsg)
+-- import Text.XML.HXT.Arrow.Pickle.Xml (xpElemQN, mchoice, throwMsg)
+import Text.XML.HXT.Arrow.Pickle.Xml (xpElemQN, throwMsg)
 import Text.XML.HXT.Arrow.Pickle.Schema (scSeq, scAlt, scNull)
 import Data.Coerce (Coercible, coerce)
 import Control.Applicative (Applicative(liftA2))
 import Data.Maybe (fromMaybe, fromJust)
+import BetterUnpickleErrors
 
 -- | An unwrapped sum of products
 type SOP' f a = NS (NP f) a
@@ -60,19 +62,17 @@ pickleMany' :: NP PU x -> PU (NP I x)
 pickleMany' = hfoldr (xpCons . xpNewtype) xpOne
 
 
--- ictraverse'_NS  ::
---      forall c proxy xs f f'. (All c xs)
---   => proxy c -> (forall a. c a => f a -> PU (f' a)) -> NS f xs  -> PU (NS f' xs)
--- ictraverse'_NS _ f = go where
---   go :: All c ys => NS f ys -> PU (NS f' ys)
---   go (Z x)  = _ $ f x
---   go (S xs) = _ $ go xs
-
 -- | Convert a product of picklers to a pickler of a sum
 -- This is equivalent to hsequence', except that PU is not applicative
 pickleSum :: NP (PU :.: f) a -> PU (NS f a)
-pickleSum Nil = xpNull
-pickleSum (Comp x :* xs) = xpOr x $ pickleSum xs
+pickleSum = xpPrependErrorMessage "pickleSum: Expected one of the following to work:" 
+          . pickleSumInner
+
+pickleSumInner :: NP (PU :.: f) a -> PU (NS f a)
+pickleSumInner (Comp x :* Nil) = xpZ x
+pickleSumInner Nil = xpNull
+pickleSumInner (Comp x :* xs) = xpOr x $ pickleSumInner xs
+
 
 pickleSum' :: NP (PU :.: f) a -> PU (NS f a)
 pickleSum' = unComp . hfoldr' (liftComp2 xpOr) (Comp xpNull)
@@ -164,7 +164,8 @@ pickleDeep2 :: SListI a => POP' PU a -> PU (SOP' I a)
 pickleDeep2 = pickleSum . hmap (Comp . pickleMany)
 
 autoProduct :: All XmlPickler a => PU (NP I a)
-autoProduct = unComp $ cpara_SList proxyXP (Comp xpOne) (Comp . xpCons (xpNewtype xpickle) . unComp)
+autoProduct = unComp $ cpara_SList proxyXP (Comp xpOne) 
+             (Comp . xpCons (xpNewtype xpickle) . unComp)
 
 -- |
 autoPickle :: All2 XmlPickler a => NP (K QName) a -> PU (SOP' I a)
@@ -183,17 +184,17 @@ autoPickle' names = coerce pickleFull
     allPicklers = hcpure proxyXP xpickle
     pickleContents :: NP (PU :.: NP I) a
     pickleContents = hmap (Comp . pickleMany) $ unPOP allPicklers
-    pickleElem :: NP (PU :.: NP I) a
-    pickleElem = hliftA2 mkElem names pickleContents
+    pickleElem' :: NP (PU :.: NP I) a
+    pickleElem' = hliftA2 mkElem names pickleContents
     pickleFull :: PU (SOP' I a)
-    pickleFull = pickleSum pickleElem
+    pickleFull = pickleSum pickleElem'
 
     mkElem :: forall a1. K QName a1 -> (:.:) PU (NP I) a1 -> (:.:) PU (NP I) a1
     mkElem = coerce $ xpElemQN @(NP I a1)
     -- mkElem (K name) (Comp pickl) = Comp $ xpElemQN name pickl
 
 autoPickle'' :: All2 XmlPickler a => NP (K QName) a -> PU (SOP' I a)
-autoPickle'' = pickleSum . hcmap (allP proxyXP) (\x -> Comp $ xpElemQN (unK x) autoProduct)
+autoPickle'' = pickleSum . hcmap (allP proxyXP) (Comp . pickleElem . unK)
 -- autoPickle'' = hfoldr (xpOr . unComp) xpNull . hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
 -- autoPickle'' = hfoldr (\x -> xpOr $ unComp x) xpNull . hcmap proxyXP1 (\(x :: K QName a1) -> Comp $ xpElemQN (unK x) $ autoProduct @a1)
 -- Defunct:
@@ -201,7 +202,7 @@ autoPickle'' = pickleSum . hcmap (allP proxyXP) (\x -> Comp $ xpElemQN (unK x) a
 -- autoPickle'' = hfoldr (\x -> xpOr $ xpElemQN (unK x) autoProduct) xpNull
 
 autoPickle''' :: All2 XmlPickler a => NP (K QName) a -> PU (SOP' I a)
-autoPickle''' = ictraverse'_NS (allP proxyXP) (\x -> xpElemQN (unK x) autoProduct)
+autoPickle''' = ictraverse'_NS (allP proxyXP) (pickleElem . unK)
 
 pickleElem :: All XmlPickler a => QName -> PU (NP I a)
 pickleElem qname = xpElemQN qname autoProduct
@@ -209,7 +210,7 @@ pickleElem qname = xpElemQN qname autoProduct
 -- | Create a product of picklers for all the cases in a sum type, 
 -- given the element names for each constructor
 productOfPicklers :: All2 XmlPickler a => NP (K QName) a -> NP (PU :.: NP I) a
-productOfPicklers = hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
+productOfPicklers = hcmap proxyXP1 (Comp . pickleElem . unK)
 
 type NamespaceUri = String
 type NSPrefix = String
@@ -227,7 +228,7 @@ type XmlSOP a = (Generic a, All2 XmlPickler (Code a))
 autoPickleSOP :: XmlSOP a => NamespaceUri -> NSPrefix -> NP (K LocalName) (Code a) -> PU a
 autoPickleSOP namespace prefix elemNames =
   xpSOP'
-    . pickleSum''
+    . pickleSum
     . productOfPicklers
     $ qualify namespace prefix elemNames
 
@@ -237,9 +238,6 @@ autoPickleSOPList namespace prefix elemNames =
   autoPickleSOP namespace prefix
     . fromMaybe (error $ "autoPickleSOPList: Wrong length of list: " ++ show elemNames)
     $ fromList elemNames
-
-unpickle :: PU a -> String -> Either String a
-unpickle p = unpickleDoc' p . head . runLA (removeAllWhiteSpace <<< xread) 
 
 -- | Pickle a simple product type
 -- You'll need to manually call xpElem to specify the element name
@@ -251,7 +249,13 @@ pickleProduct :: (IsProductType a xs, All XmlPickler xs) => PU a
 pickleProduct = xpWrap (productTypeTo , productTypeFrom) autoProduct
 
 pickleProduct' :: (IsProductType a xs, All XmlPickler xs) => PU a
-pickleProduct' = xpSOP' . xpWrap (Z , unZ) $ autoProduct
+pickleProduct' = xpSOP' . xpZ $ autoProduct
+
+xpZ :: PU (a x) -> PU (NS a '[x])
+xpZ = xpWrap (Z , unZ)
+
+xpProduct :: IsProductType a xs => NP PU xs -> PU a
+xpProduct = xpSOP' . xpZ . pickleMany
 
 -- | Constructor for lists of `K a`
 -- 
@@ -301,6 +305,23 @@ xpOr p q = PU
     { appPickle = \case
         Z a  -> appPickle p a
         S as -> appPickle q as
-    , appUnPickle = mchoice (Z <$> appUnPickle p) pure (S <$> appUnPickle q)
+    -- , appUnPickle = mchoice (Z <$> appUnPickle p) pure (S <$> appUnPickle q)
+    , appUnPickle = choiceCollectErrors (Z <$> appUnPickle p) (S <$> appUnPickle q)
     , theSchema = theSchema p `scAlt` theSchema q
     }
+
+-- choiceCollectErrors :: Unpickler a -> Unpickler a -> Unpickler a
+-- choiceCollectErrors u v = UP $ \st ->
+--   let (r, st') = runUP u st in
+--   case r of
+--     Right _ -> (r, st')
+--     Left e@(msg, st'') ->
+--       if nesting st'' == nesting st
+--         then let (r', st''') = runUP u st in
+--           case r' of
+--             Right _ -> (r', st''')
+--             Left e' -> combineErrors e e'
+--         else (Left e, st')
+
+-- combineErrors :: UnpickleErr -> UnpickleErr -> (UnpickleVal a, St)
+-- combineErrors = error "not implemented"
