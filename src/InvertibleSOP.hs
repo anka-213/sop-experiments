@@ -20,6 +20,8 @@ import Control.Invertible.Monoidal
 import Data.Void (absurd, Void)
 -- import Control.Invertible.Monoidal (liftI2, unit, (>*<), (>$<), Monoidal)
 
+-- * Basic isomorphisms
+
 toFrom :: Generic a => a <-> Rep a
 toFrom = from :<->: to
 
@@ -38,14 +40,35 @@ newtypeConv = newtypeFrom :<->: newtypeTo
 sopConv :: SOP f xss <-> NS (NP f) xss
 sopConv = unSOP :<->: SOP
 
+sopConv' :: NS (NP f) xss <-> SOP f xss
+sopConv' = SOP :<->: unSOP
+
 popConv :: POP f xss <-> NP (NP f) xss
 popConv = unPOP :<->: POP
+
+popConv' :: NP (NP f) xss <-> POP f xss
+popConv' = invert popConv
 
 hdTl :: NP f (x ': xs) <-> (f x, NP f xs)
 hdTl = (\x -> (hd x, tl x)) :<->: (uncurry (:*))
 
 tlHd :: (f x, NP f xs) <-> NP f (x ': xs)
 tlHd = invert hdTl
+
+nilUnit :: () <-> NP g '[]
+nilUnit = mempty :<->: mempty
+
+zOrS :: NS f (x ': xs) <-> Either (f x) (NS f xs) 
+zOrS = [biCase|
+    Z x <-> Left x
+    S xs <-> Right xs
+    |]
+
+zOrS' ::  Either (f x) (NS f xs) <-> NS f (x ': xs)
+zOrS' = invert zOrS
+
+nsVoid :: Void <-> NS g '[]
+nsVoid = absurd :<->: \case {}
 
 newtype (f <-.-> g) a = Bij { apBij :: f a <-> g a }
 
@@ -57,11 +80,11 @@ nilMon = Inv.fmap nilUnit unit
 x >:*< xs = liftI2 tlHd x xs
 
 class HAp h => HSequenceInv (h :: (k -> Type) -> (l -> Type)) where
-  ihsequence' :: (SListIN h xs, Monoidal f) => (Prod h) (f :.: g) xs -> f (h g xs)
-  ihctraverse' :: (AllN h c xs, Monoidal g) => proxy c -> (forall a. c a => f a -> g (f' a)) -> (Prod h) f xs -> g (h f' xs)
+  ihsequence' :: (SListIN h xs, MonoidalAlt f) => (Prod h) (f :.: g) xs -> f (h g xs)
+  ihctraverse' :: (AllN h c xs, MonoidalAlt g) => proxy c -> (forall a. c a => f a -> g (f' a)) -> (Prod h) f xs -> g (h f' xs)
 --   ihtraverse' :: (SListIN' h xs , Monoidal g) => (forall a. f a -> g (f' a)) -> h f xs -> g (h f' xs)
 
-ihtraverse' :: (HSequenceInv h , SListIN' h xs , Monoidal g) => (forall a. f a -> g (f' a)) -> (Prod h) f xs -> g (h f' xs)
+ihtraverse' :: (HSequenceInv h , SListIN' h xs , MonoidalAlt g) => (forall a. f a -> g (f' a)) -> (Prod h) f xs -> g (h f' xs)
 ihtraverse' f = ihctraverse' topP f
 
 -- A type alias variant, so we can derive `AllN h Top` from `SequenceListIN' h`
@@ -90,20 +113,25 @@ instance HSequenceInv NP where
     ihsequence' = isequence'_NP
     ihctraverse' = ictraverse'_NP
 
-nilUnit :: () <-> NP g '[]
-nilUnit = mempty :<->: mempty
+instance HSequenceInv POP where
+    ihsequence' = isequence'_POP
+    ihctraverse' = ictraverse'_POP
 
-zOrS :: NS f (x ': xs) <-> Either (f x) (NS f xs) 
-zOrS = [biCase|
-    Z x <-> Left x
-    S xs <-> Right xs
-    |]
+isequence'_POP :: (SListI2 xs, Monoidal f) => POP (f :.: g) xs -> f (POP g xs)
+isequence'_POP = Inv.fmap popConv' . isequence'_NP 
+               . hmap (Comp . isequence'_NP) . unPOP
+-- isequence'_POP = undefined . hmap isequence'_NP . unPOP
 
-zOrS' ::  Either (f x) (NS f xs) <-> NS f (x ': xs)
-zOrS' = invert zOrS
+ictraverse'_POP  ::
+     forall c proxy xs f f' g. (All2 c xs,  Monoidal g)
+  => proxy c -> (forall a. c a => f a -> g (f' a)) -> POP f xs  -> g (POP f' xs)
+ictraverse'_POP p f  = Inv.fmap popConv' . ictraverse'_NP (allP p) (ictraverse'_NP p f) . unPOP
 
-nsVoid :: Void <-> NS g '[]
-nsVoid = absurd :<->: \case {}
+allP :: proxy c -> Proxy (All c)
+allP _ = Proxy
+
+-- isequence'_POP :: POP (f :.: g) xs -> f (POP g xs)
+-- isequence'_POP = error "not implemented"
 
 fzero :: MonoidalAlt f => f (NS g '[])
 fzero = nsVoid >$< zero
@@ -113,6 +141,14 @@ nsPlus x xs = zOrS' >$< (x >|< xs)
 
 -- go' :: All c ys => proxy c -> NS f ys <-> g (NS f' ys)
 -- go' _ = _ Inv.. zOrS
+
+instance HSequenceInv NS where
+    ihsequence' = isequence'_NS
+    ihctraverse' = ictraverse'_NS
+
+instance HSequenceInv SOP where
+    ihsequence' = isequence'_SOP
+    ihctraverse' = ictraverse'_SOP
 
 isequence'_NS  ::   MonoidalAlt f  => NP  (f :.: g) xs  -> f (NS  g xs)
 isequence'_NS Nil = fzero
@@ -129,6 +165,17 @@ ictraverse'_NS _ f = go where
 
 ihtraverse'_NS :: (SListI xs , MonoidalAlt g) => (forall a. f a -> g (f' a)) -> NP f xs -> g (NS f' xs)
 ihtraverse'_NS f = ictraverse'_NS topP f
+
+isequence'_SOP :: (SListI xss, MonoidalAlt f) => POP (f :.: g) xss -> f (SOP g xss)
+isequence'_SOP = Inv.fmap sopConv' . isequence'_NS . hliftA (Comp . isequence'_NP) . unPOP
+-- isequence'_SOP = fmap SOP . isequence'_NS . hliftA (Comp . isequence'_NP) . unSOP
+
+ictraverse'_SOP :: (All2 c xss, MonoidalAlt g) => proxy c -> (forall a. c a => f a -> g (f' a)) -> POP f xss -> g (SOP f' xss)
+ictraverse'_SOP p f = Inv.fmap sopConv' . ictraverse'_NS (allP p) (ictraverse'_NP p f) . unPOP
+
+itraverse'_SOP :: (SListI2 xss, MonoidalAlt g) => (forall a. f a -> g (f' a)) -> POP f xss -> g (SOP f' xss)
+itraverse'_SOP f =
+  ictraverse'_SOP topP f
 
 {-
 ictraverse'_NS  ::
