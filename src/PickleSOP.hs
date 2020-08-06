@@ -59,6 +59,15 @@ pickleMany (x :* xs) = xpCons (xpNewtype x) $ pickleMany xs
 pickleMany' :: NP PU x -> PU (NP I x)
 pickleMany' = hfoldr (xpCons . xpNewtype) xpOne
 
+
+-- ictraverse'_NS  ::
+--      forall c proxy xs f f'. (All c xs)
+--   => proxy c -> (forall a. c a => f a -> PU (f' a)) -> NS f xs  -> PU (NS f' xs)
+-- ictraverse'_NS _ f = go where
+--   go :: All c ys => NS f ys -> PU (NS f' ys)
+--   go (Z x)  = _ $ f x
+--   go (S xs) = _ $ go xs
+
 -- | Convert a product of picklers to a pickler of a sum
 -- This is equivalent to hsequence', except that PU is not applicative
 pickleSum :: NP (PU :.: f) a -> PU (NS f a)
@@ -71,6 +80,12 @@ pickleSum' = unComp . hfoldr' (liftComp2 xpOr) (Comp xpNull)
     -- liftComp2 :: (:.:) PU f (g x) -> (:.:) PU f (g x) -> (:.:) PU f (g x)
  -- f (g p) -> f (g p) -> f (g p)
     -- liftComp2 f x y = Comp $ f (unComp x) (unComp y)
+
+lowerComp :: (((f :.: g) p -> (f1 :.: g1) p1) -> f (g p) -> f1 (g1 p1))
+lowerComp f = unComp . f . Comp 
+
+liftComp :: (f (g p) -> f1 (g1 p1)) -> ((f :.: g) p -> (f1 :.: g1) p1)
+liftComp f = coerce f
 
 liftComp2 :: ((f (g p)    -> f (g1 p1)     -> f (g2 p2))
            -> (:.:) f g p -> (:.:) f g1 p1 -> (:.:) f g2 p2)
@@ -112,7 +127,9 @@ hfoldr ::
   NP f xss ->
   r (g xss)
 -- hfoldr f = Comp ~> id ~> unComp $ hfoldr' $ id ~> unComp ~> Comp $ f
-hfoldr f z = unComp . hfoldr' (\x -> Comp . f x . unComp) (Comp z)
+-- hfoldr f = coerce $ hfoldr' (\x -> coerce . f x . unComp)
+hfoldr f = coerce $ hfoldr' (liftComp . f)
+-- hfoldr f z = unComp . hfoldr' (\x -> Comp . f x . unComp) (Comp z)
 -- hfoldr f z = go where
 --     go :: forall z. NP f z -> r (g z)
 --     go Nil = z

@@ -57,6 +57,7 @@ library
                      , SopParser
                      , PickleSOP
                      , HxtPickleInvertible
+                     , InvertibleSOP
                     --  , Text.XML.HXT.Arrow.Pickle.Xml.Invertible
 
 test-suite sop-experiments-test
