@@ -79,6 +79,8 @@ nilMon = Inv.fmap nilUnit unit
 (>:*<) :: Monoidal f => f (g x) -> f (NP g xs) -> f (NP g (x : xs))
 x >:*< xs = liftI2 tlHd x xs
 
+-- | This corresponds to HSequenceInv, but for Monoidal Invariant Functors
+-- One example of this is the `PU` type that contains picklers and unpicklers for XML.
 class HAp h => HSequenceInv (h :: (k -> Type) -> (l -> Type)) where
   ihsequence' :: (SListIN h xs, MonoidalAlt f) => (Prod h) (f :.: g) xs -> f (h g xs)
   ihctraverse' :: (AllN h c xs, MonoidalAlt g) => proxy c -> (forall a. c a => f a -> g (f' a)) -> (Prod h) f xs -> g (h f' xs)
@@ -150,9 +152,12 @@ instance HSequenceInv SOP where
     ihsequence' = isequence'_SOP
     ihctraverse' = ictraverse'_SOP
 
-isequence'_NS  ::   MonoidalAlt f  => NP  (f :.: g) xs  -> f (NS  g xs)
+isequence'_NS :: MonoidalAlt f  => NP  (f :.: g) xs  -> f (NS  g xs)
 isequence'_NS Nil = fzero
 isequence'_NS (Comp x :* xs) = nsPlus x (isequence'_NS xs)
+
+-- isequence'_NS' :: (SListI xs,  MonoidalAlt f)  => NP  (f :.: g) xs  -> f (NS  g xs)
+-- isequence'_NS' = ihtraverse'_NS unComp
 
 ictraverse'_NS  ::
      forall c proxy xs f f' g. (All c xs,  MonoidalAlt g)
@@ -214,4 +219,4 @@ ictraverse'_NS _ f = go where
 -- apInv_NP (Fn f :* fs)  (x :* xs)  = f x :* ap_NP fs xs
 
 
-    -- _ :<->: _(Monoidal f, Functor f1)(Monoidal f, Functor f1)(All c xs, Monoidal g, Applicative g)(Functor f, MonoidalAlt f)(All c xs, Functor g, MonoidalAlt g)
+    -- _ :<->: _(Monoidal f, Functor f1)(Monoidal f, Functor f1)(All c xs, Monoidal g, Applicative g)(Functor f, MonoidalAlt f)(All c xs, Functor g, MonoidalAlt g)(MonoidalAlt f, All Top xs)(MonoidalAlt f, All Top xs)

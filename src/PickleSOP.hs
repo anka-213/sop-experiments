@@ -81,6 +81,15 @@ pickleSum' = unComp . hfoldr' (liftComp2 xpOr) (Comp xpNull)
  -- f (g p) -> f (g p) -> f (g p)
     -- liftComp2 f x y = Comp $ f (unComp x) (unComp y)
 
+ictraverse'_NS  ::
+     forall c proxy xs f f' . (All c xs)
+  => proxy c -> (forall a. c a => f a -> PU (f' a)) -> NP f xs  -> PU (NS f' xs)
+-- ictraverse'_NS p f = isequence'_NS . hcmap p (Comp . f)
+ictraverse'_NS _ f = go where
+  go :: All c ys => NP f ys -> PU (NS f' ys)
+  go Nil = xpNull
+  go (x :* xs) = xpOr (f x) (go xs)
+
 lowerComp :: (((f :.: g) p -> (f1 :.: g1) p1) -> f (g p) -> f1 (g1 p1))
 lowerComp f = unComp . f . Comp 
 
@@ -184,24 +193,29 @@ autoPickle' names = coerce pickleFull
     -- mkElem (K name) (Comp pickl) = Comp $ xpElemQN name pickl
 
 autoPickle'' :: All2 XmlPickler a => NP (K QName) a -> PU (SOP' I a)
-autoPickle'' = pickleSum . hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
+autoPickle'' = pickleSum . hcmap (allP proxyXP) (\x -> Comp $ xpElemQN (unK x) autoProduct)
 -- autoPickle'' = hfoldr (xpOr . unComp) xpNull . hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
 -- autoPickle'' = hfoldr (\x -> xpOr $ unComp x) xpNull . hcmap proxyXP1 (\(x :: K QName a1) -> Comp $ xpElemQN (unK x) $ autoProduct @a1)
+-- Defunct:
 -- autoPickle'' = hfoldr (\x -> xpOr $ unK x) xpNull . hmap (\x -> K $ xpElemQN (unK x) autoProduct)
 -- autoPickle'' = hfoldr (\x -> xpOr $ xpElemQN (unK x) autoProduct) xpNull
--- autoPickle'' Nil = xpNull
--- autoPickle'' (K x :* xs) = xpOr (xpElemQN x autoProduct) $ autoPickle'' xs
+
+autoPickle''' :: All2 XmlPickler a => NP (K QName) a -> PU (SOP' I a)
+autoPickle''' = ictraverse'_NS (allP proxyXP) (\x -> xpElemQN (unK x) autoProduct)
+
+pickleElem :: All XmlPickler a => QName -> PU (NP I a)
+pickleElem qname = xpElemQN qname autoProduct
 
 -- | Create a product of picklers for all the cases in a sum type, 
 -- given the element names for each constructor
 productOfPicklers :: All2 XmlPickler a => NP (K QName) a -> NP (PU :.: NP I) a
 productOfPicklers = hcmap proxyXP1 (\x -> Comp $ xpElemQN (unK x) autoProduct)
--- | Turns a product of unqualified names into a product of qualified names.
 
 type NamespaceUri = String
 type NSPrefix = String
 type LocalName = String
 
+-- | Turns a product of unqualified names into a product of qualified names.
 qualify :: SListI xs => NamespaceUri -> NSPrefix -> NP (K LocalName) xs -> NP (K QName) xs
 qualify namespace prefix = hmap $ mapKK $ \name -> mkQName prefix name namespace
 
@@ -224,6 +238,8 @@ autoPickleSOPList namespace prefix elemNames =
     . fromMaybe (error $ "autoPickleSOPList: Wrong length of list: " ++ show elemNames)
     $ fromList elemNames
 
+unpickle :: PU a -> String -> Either String a
+unpickle p = unpickleDoc' p . head . runLA (removeAllWhiteSpace <<< xread) 
 
 -- | Pickle a simple product type
 -- You'll need to manually call xpElem to specify the element name
@@ -252,13 +268,17 @@ infixr 5 <:
 proxyTop :: Proxy Top
 proxyTop = Proxy
 
+allP :: Proxy a -> Proxy (All a)
+allP _ = Proxy
+
 proxyXP1 :: Proxy (All XmlPickler)
 proxyXP1 = Proxy
 proxyXP :: Proxy XmlPickler
 proxyXP = Proxy
 
--- The base combinators that corresponds to an algebraic data type.
+-- * The base combinators that corresponds to an algebraic data type.
 -- xpOne is Unit, xpCons is Product type, xpNull is empty type, xpOr is product type
+
 xpOne :: PU (NP f '[])
 xpOne = xpLift Nil
 
