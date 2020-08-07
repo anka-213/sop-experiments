@@ -69,7 +69,7 @@ pickleSum = xpPrependErrorMessage "pickleSum: Expected one of the following to w
           . pickleSumInner
 
 pickleSumInner :: NP (PU :.: f) a -> PU (NS f a)
-pickleSumInner (Comp x :* Nil) = xpZ x
+pickleSumInner (Comp x :* Nil) = xpZ x -- This improve error messages, by skipping the Nil case
 pickleSumInner Nil = xpNull
 pickleSumInner (Comp x :* xs) = xpOr x $ pickleSumInner xs
 
@@ -230,6 +230,7 @@ autoPickleSOP namespace prefix elemNames =
   xpSOP'
     . pickleSum
     . productOfPicklers
+    -- . autoPickle'''
     $ qualify namespace prefix elemNames
 
 -- | Partial version of the function above, which instead takes an ordinary list

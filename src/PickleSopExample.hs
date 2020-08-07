@@ -76,11 +76,11 @@ instance XmlPickler ThreeAlts where
 xpta :: PU ThreeAlts
 xpta = xpickle
 
--- $> putStrLn . pickleC . SomeFoo $ PSExample "f" "b"
-
--- $> putStrLn . pickle fooOrBar . Left . SomeFoo $ PSExample "f" "b"
-
--- $> putStrLn . pickle fooOrBar . Right $ PSExample "f" "b"
+-- -- $> putStrLn . pickleC . SomeFoo $ PSExample "f" "b"
+--
+-- -- $> putStrLn . pickle fooOrBar . Left . SomeFoo $ PSExample "f" "b"
+--
+-- -- $> putStrLn . pickle fooOrBar . Right $ PSExample "f" "b"
 
 -- $> print . getRight . unpickle fooOrBar $ "<either><rightBar foo=\"f\" bar=\"b\"/></either>"
 

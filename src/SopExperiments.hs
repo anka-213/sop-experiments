@@ -38,7 +38,7 @@ px :: Proxy t
 px = Proxy
 
 -- $> :kind! Code Example
--- '[ '[Int, ()], '[(), Char]]
+-- '[ '[Int, ()], '[Char]]
 
 -- $> datatypeInfo @Example px
 
